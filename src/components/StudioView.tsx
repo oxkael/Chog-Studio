@@ -305,12 +305,16 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
       <header>
         <button
           onClick={onBackToLanding}
-          className="logo bg-transparent border-0 p-0 cursor-pointer"
-          style={{ border: 'none', background: 'transparent' }}
+          className="btn"
+          style={{ padding: '4px 14px', fontSize: '1.05rem', marginRight: '4px' }}
           title="Return to Story Landing"
         >
-          Chog Studio
+          ← Back
         </button>
+
+        <span className="logo">
+          Chog Studio
+        </span>
         
         <input
           id="title"

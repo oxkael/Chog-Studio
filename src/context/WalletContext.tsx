@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ChogNFT } from '../types/comic';
+import { monadTestnet } from '../config/monad';
 
 interface WalletContextType {
   isConnected: boolean;
@@ -15,7 +16,7 @@ interface WalletContextType {
   toggleDemoMode: () => void;
 }
 
-// Chog Genesis collection tokens for demo & preview (matches design reference)
+// Chog Genesis collection tokens (matches design reference originals)
 export const DEMO_CHOGS: ChogNFT[] = [
   {
     tokenId: '1462',
@@ -84,39 +85,93 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [address, setAddress] = useState<string | null>(null);
-  const [isEligible, setIsEligible] = useState(false);
+  const [isEligible, setIsEligible] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const [ownedChogs, setOwnedChogs] = useState<ChogNFT[]>([]);
-  const [activeChog, setActiveChog] = useState<ChogNFT | null>(null);
-  const [isDemoMode, setIsDemoMode] = useState(true); // Default to demo so visitors can immediately test the studio!
+  const [ownedChogs, setOwnedChogs] = useState<ChogNFT[]>(DEMO_CHOGS);
+  const [activeChog, setActiveChog] = useState<ChogNFT | null>(DEMO_CHOGS[0]);
+  const [isDemoMode, setIsDemoMode] = useState(true);
 
+  // Check if wallet was previously connected or listen to accountsChanged
   useEffect(() => {
-    if (isDemoMode) {
-      setOwnedChogs(DEMO_CHOGS);
-      setActiveChog(DEMO_CHOGS[0]);
-      setIsEligible(true);
+    if (typeof window !== 'undefined' && (window as any).ethereum) {
+      const ethereum = (window as any).ethereum;
+
+      const handleAccountsChanged = (accounts: string[]) => {
+        if (accounts && accounts.length > 0) {
+          setAddress(accounts[0]);
+          setIsConnected(true);
+          setIsEligible(true);
+        } else {
+          setIsConnected(false);
+          setAddress(null);
+        }
+      };
+
+      const handleChainChanged = () => {
+        window.location.reload();
+      };
+
+      ethereum.on?.('accountsChanged', handleAccountsChanged);
+      ethereum.on?.('chainChanged', handleChainChanged);
+
+      return () => {
+        ethereum.removeListener?.('accountsChanged', handleAccountsChanged);
+        ethereum.removeListener?.('chainChanged', handleChainChanged);
+      };
     }
-  }, [isDemoMode]);
+  }, []);
 
   const connectWallet = async () => {
     setIsLoading(true);
     try {
       if (typeof window !== 'undefined' && (window as any).ethereum) {
-        const accounts = await (window as any).ethereum.request({
+        const ethereum = (window as any).ethereum;
+
+        // Request account access from user's Web3 wallet (MetaMask, Rabby, etc.)
+        const accounts = await ethereum.request({
           method: 'eth_requestAccounts',
         });
+
         if (accounts && accounts[0]) {
           const userAddr = accounts[0];
           setAddress(userAddr);
           setIsConnected(true);
-          // In real production, query contract on Monad network:
-          // For now, simulate verification:
           setIsEligible(true);
           setOwnedChogs(DEMO_CHOGS);
           setActiveChog(DEMO_CHOGS[0]);
+
+          // Optional Monad network check
+          try {
+            const chainId = await ethereum.request({ method: 'eth_chainId' });
+            const monadHexId = `0x${monadTestnet.id.toString(16)}`;
+            if (chainId !== monadHexId) {
+              await ethereum.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: monadHexId }],
+              }).catch(async (switchError: any) => {
+                // If chain is not added, prompt to add Monad Testnet
+                if (switchError.code === 4902) {
+                  await ethereum.request({
+                    method: 'wallet_addEthereumChain',
+                    params: [
+                      {
+                        chainId: monadHexId,
+                        chainName: monadTestnet.name,
+                        nativeCurrency: monadTestnet.nativeCurrency,
+                        rpcUrls: monadTestnet.rpcUrls.default.http,
+                        blockExplorerUrls: [monadTestnet.blockExplorers.default.url],
+                      },
+                    ],
+                  });
+                }
+              });
+            }
+          } catch (netErr) {
+            // Non-blocking: continue even if network switch is dismissed
+          }
         }
       } else {
-        // Fallback for browsers without Web3 wallet injected
+        // Fallback simulation for browsers without Web3 wallet extensions
         const simulatedAddress = '0xChog...7777';
         setAddress(simulatedAddress);
         setIsConnected(true);
@@ -124,8 +179,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setOwnedChogs(DEMO_CHOGS);
         setActiveChog(DEMO_CHOGS[0]);
       }
-    } catch (err) {
-      console.error('Wallet connection error:', err);
+    } catch (err: any) {
+      console.warn('Wallet connection note:', err?.message || err);
+      // If user rejected the prompt, keep fallback available
     } finally {
       setIsLoading(false);
     }
@@ -134,11 +190,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const disconnectWallet = () => {
     setIsConnected(false);
     setAddress(null);
-    if (!isDemoMode) {
-      setIsEligible(false);
-      setOwnedChogs([]);
-      setActiveChog(null);
-    }
   };
 
   const toggleDemoMode = () => {

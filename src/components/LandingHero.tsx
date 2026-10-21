@@ -27,7 +27,7 @@ const clamp = (v: number, min = 0, max = 1) => Math.min(max, Math.max(min, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
-  const { isConnected, connectWallet } = useWallet();
+  const { isConnected, address, connectWallet } = useWallet();
 
   // Section and animation element refs
   const barRef = useRef<HTMLDivElement>(null);
@@ -183,10 +183,11 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
     return () => cancelAnimationFrame(reqId);
   }, []);
 
-  const handleAction = () => {
-    if (!isConnected) {
-      connectWallet().then(() => onEnterStudio());
-    } else {
+  const handleConnectWallet = async () => {
+    try {
+      await connectWallet();
+      onEnterStudio();
+    } catch (e) {
       onEnterStudio();
     }
   };
@@ -207,8 +208,8 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
         <a href="#show">The comic</a>
         <a href="#pages">Pages</a>
         <a href="#how">How it works</a>
-        <button onClick={handleAction} className="btn pri mag">
-          {isConnected ? 'Enter the studio' : 'Connect wallet'}
+        <button onClick={handleConnectWallet} className="btn pri mag">
+          {isConnected && address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Connect wallet'}
         </button>
       </nav>
 
@@ -226,8 +227,8 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
             Turn the Chog you own into the star of a comic. Choose a page, place your art, add the words, and keep going page after page.
           </p>
           <div className="row">
-            <button onClick={handleAction} className="btn pri big mag">
-              {isConnected ? 'Enter the studio' : 'Connect wallet'}
+            <button onClick={handleConnectWallet} className="btn pri big mag">
+              Connect wallet
             </button>
             <a className="btn big mag" href="#how">
               How it works
@@ -495,8 +496,8 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
         </div>
 
         <h2>Your Chog has a story.</h2>
-        <button onClick={handleAction} className="btn pri big mag">
-          {isConnected ? 'Enter the studio' : 'Enter the studio'}
+        <button onClick={onEnterStudio} className="btn pri big mag">
+          Enter the studio
         </button>
       </section>
 
