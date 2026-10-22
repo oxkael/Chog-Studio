@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { toPng } from 'html-to-image';
 import { useWallet } from '../context/WalletContext';
 import { ComicLayout, PageData, PanelData, ChogTile } from '../types/comic';
 
@@ -62,7 +63,22 @@ interface StudioViewProps {
 }
 
 export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
-  const { ownedChogs, setActiveChog } = useWallet();
+  const {
+    ownedChogs,
+    activeChog,
+    setActiveChog,
+    isTestAccess,
+    supportingCast,
+    pickCastAsHero,
+  } = useWallet();
+
+  const [showCastPicker, setShowCastPicker] = useState(false);
+  const [castSearch, setCastSearch] = useState('');
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const bubbleRef0 = useRef<HTMLTextAreaElement>(null);
+  const bubbleRef1 = useRef<HTMLTextAreaElement>(null);
 
   // Story state
   const [storyTitle, setStoryTitle] = useState('The Dip');
@@ -106,6 +122,18 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
   const currentPage = pages[currentPageIndex] || pages[0];
   const currentPanel = currentPage.p[selectedPanelIndex] || currentPage.p[0];
   const currentTile = currentPanel.k[selectedChogTileIndex] || currentPanel.k[0];
+
+  const filteredCast = supportingCast.filter((c) => {
+    if (!castSearch.trim()) return true;
+    const q = castSearch.toLowerCase().trim();
+    const idMatch = c.tokenId.includes(q) || c.name.toLowerCase().includes(q);
+    const traitMatch = c.attributes?.some(
+      (a: any) =>
+        String(a.value).toLowerCase().includes(q) ||
+        String(a.trait_type).toLowerCase().includes(q)
+    );
+    return idMatch || traitMatch;
+  });
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -178,6 +206,19 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
     });
   };
 
+  const handleAddSecondChog = () => {
+    updateCurrentPanel((panel) => {
+      if (panel.k.length < 2) {
+        const nextChogIndex = (panel.k[0].c + 1) % (ownedChogs.length || 5);
+        panel.k = [
+          { ...panel.k[0], s: 48, tx: -24, ty: 10, fill: 0, f: 0, bs: 'l', bx: 4, by: 4 },
+          createTile(nextChogIndex, { s: 48, tx: 24, ty: 10, fill: 0, f: 1, bs: 'r', bx: 52, by: 4 }),
+        ];
+        setSelectedChogTileIndex(1);
+      }
+    });
+  };
+
   const handleArrangement = (preset: 'side' | 'overlap' | 'inset') => {
     updateCurrentPanel((panel) => {
       if (panel.k.length < 2) return;
@@ -196,14 +237,31 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
 
   const handleWriteStarterStory = () => {
     const chogIdx = currentTile.c;
-    const chog = ownedChogs[chogIdx] || ownedChogs[0];
+    const chog = ownedChogs[chogIdx] || activeChog || ownedChogs[0];
     const name = chog?.name || `Chog #${chog?.tokenId || '1462'}`;
 
+    // Extract traits if present
+    const attrs = chog?.attributes || [];
+    const getTrait = (type: string) =>
+      attrs.find((a: any) => a.trait_type?.toLowerCase() === type.toLowerCase())?.value;
+
+    const head = getTrait('Head');
+    const eyes = getTrait('Eyes');
+    const body = getTrait('Body');
+    const mouth = getTrait('Mouth');
+    const side = getTrait('Side');
+    const defaultFlip = side === 'Right' ? 0 : 1;
+
+    const line1Cap = head && body ? `${name} rocking the ${head} and ${body}.` : `${name} checks the Monad chart.`;
+    const line2Cap = eyes ? `Scanning the blocks with ${eyes}...` : 'Double checking the order book.';
+    const line2Bubble = mouth ? `Wait... what is that?!` : 'Is that... the bottom?!';
+    const line3Bubble = mouth ? `Never fade a Monad Chog!` : 'LFG! Never faded!';
+
     const starterLines = [
-      { cap: `${name} wakes up to a green candle.`, bubble: "Wait... is it happening?!", zoom: 1 },
-      { cap: 'Double checking the order book.', bubble: 'Every metric looks solid.', zoom: 1.8 },
-      { cap: 'Sudden high-volume Monad spike.', bubble: 'LFG! Never faded!', zoom: 1.2 },
-      { cap: 'Another chapter in the chronicles.', bubble: 'Your Chog. Your story.', zoom: 1 },
+      { cap: line1Cap, bubble: 'Looking for a clean setup...', zoom: 1, flip: defaultFlip },
+      { cap: line2Cap, bubble: line2Bubble, zoom: 1.7, flip: defaultFlip },
+      { cap: 'Sudden high-volume Monad spike.', bubble: line3Bubble, zoom: 1.3, flip: defaultFlip === 0 ? 1 : 0 },
+      { cap: 'Another chapter in the chronicles.', bubble: 'Your Chog. Your story.', zoom: 1, flip: defaultFlip },
     ];
 
     setPages((prevPages) => {
@@ -217,7 +275,7 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
           z: line.zoom,
           x: line.zoom > 1.5 ? -15 : 0,
           y: 0,
-          f: i === 3 ? 1 : 0,
+          f: line.flip,
           bt: line.bubble,
         };
         return {
@@ -232,6 +290,120 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
     });
 
     showToast('Starter story generated from traits!');
+  };
+
+  // Close export dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showExportMenu]);
+
+  const handleExportJson = () => {
+    try {
+      const exportData = {
+        version: '1.0',
+        title: storyTitle,
+        t: storyTitle,
+        pages,
+        exportedAt: new Date().toISOString(),
+      };
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safeTitle = (storyTitle || 'chog_comic').trim().replace(/[^a-zA-Z0-9_\-]/g, '_');
+      a.href = url;
+      a.download = `${safeTitle}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Exported story as JSON!');
+    } catch {
+      showToast('Failed to export JSON');
+    }
+  };
+
+  const handleExportPng = async () => {
+    try {
+      showToast('Rendering page image...');
+      const pageEl = document.querySelector('#canvas .page') as HTMLElement;
+      if (!pageEl) {
+        showToast('Could not find comic page element');
+        return;
+      }
+      const dataUrl = await toPng(pageEl, {
+        pixelRatio: 2,
+        cacheBust: true,
+      });
+      const a = document.createElement('a');
+      const safeTitle = (storyTitle || 'chog_comic').trim().replace(/[^a-zA-Z0-9_\-]/g, '_');
+      a.href = dataUrl;
+      a.download = `${safeTitle}_page_${currentPageIndex + 1}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast('Downloaded page as PNG!');
+    } catch (err) {
+      console.error('PNG export error:', err);
+      showToast('Failed to render PNG image');
+    }
+  };
+
+  const triggerImport = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const data = JSON.parse(text);
+
+        if (!data || !Array.isArray(data.pages) || data.pages.length === 0) {
+          showToast('Invalid comic file: missing pages array');
+          return;
+        }
+
+        const importedTitle = data.title || data.t || 'Imported Comic';
+        setStoryTitle(importedTitle);
+        setPages(data.pages);
+        setCurrentPageIndex(0);
+        setSelectedPanelIndex(0);
+        setSelectedChogTileIndex(0);
+
+        try {
+          localStorage.setItem(
+            'chogmock3',
+            JSON.stringify({ pages: data.pages, t: importedTitle })
+          );
+        } catch {
+          // ignore
+        }
+
+        showToast(`Loaded "${importedTitle}" (${data.pages.length} pages)!`);
+      } catch {
+        showToast('Failed to parse JSON file');
+      } finally {
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      }
+    };
+    reader.readAsText(file);
   };
 
   const handleSave = () => {
@@ -316,6 +488,12 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
           Chog Studio
         </span>
         
+        {isTestAccess && (
+          <span className="test-badge" title="Local development test access active">
+            Test access
+          </span>
+        )}
+        
         <input
           id="title"
           value={storyTitle}
@@ -334,16 +512,77 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
           {isPreviewMode ? 'Back to editing' : 'Preview'}
         </button>
 
+        <button
+          id="import-btn"
+          type="button"
+          onClick={triggerImport}
+          title="Import story JSON file"
+        >
+          Import
+        </button>
+
+        <div className="export-dropdown-container" ref={exportMenuRef}>
+          <button
+            id="export-btn"
+            type="button"
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            title="Export options"
+          >
+            Export ▾
+          </button>
+          {showExportMenu && (
+            <div className="export-menu">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExportMenu(false);
+                  handleExportJson();
+                }}
+              >
+                📄 Export JSON (Project)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExportMenu(false);
+                  handleExportPng();
+                }}
+              >
+                🖼️ Export PNG (Current Page)
+              </button>
+            </div>
+          )}
+        </div>
+
         <button id="save" className="pri" onClick={handleSave}>
           Save
         </button>
+
+        {/* Hidden file input for JSON import */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileImport}
+          accept=".json,application/json"
+          style={{ display: 'none' }}
+        />
       </header>
 
       {/* 3-Column Studio Grid Layout */}
       <div className="studio">
-        {/* Tool: My Chogs */}
-        <section id="chogs" className={`tool ${mobileTab === 'chogs' ? 'on' : ''}`}>
-          <h2>My Chogs</h2>
+        {/* Left Column Tools */}
+        <aside className="sidebar-col sidebar-left">
+          {/* Tool: My Chogs */}
+          <section id="chogs" className={`tool ${mobileTab === 'chogs' ? 'on' : ''}`}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <h2>My Chogs</h2>
+            {isTestAccess && (
+              <span className="test-badge" style={{ fontSize: '0.62rem', padding: '2px 7px' }}>
+                Test access
+              </span>
+            )}
+          </div>
+
           <div className="list" id="list">
             {ownedChogs.map((chog, idx) => {
               const isSelected = currentTile.c === idx;
@@ -367,6 +606,45 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
                 </button>
               );
             })}
+          </div>
+
+          {isTestAccess && (
+            <button
+              type="button"
+              className="btn-pick-hero"
+              onClick={() => setShowCastPicker(true)}
+              title="Pick any supporting-cast Chog as hero"
+            >
+              ★ Pick Hero from Cast ({supportingCast.length})
+            </button>
+          )}
+
+          <h3 style={{ marginTop: '16px' }}>Supporting cast</h3>
+          <p className="hint">The Chog Genesis cast ({supportingCast.length}). Drop any into a panel or set as hero.</p>
+          <div className="list" style={{ maxHeight: '160px', overflowY: 'auto' }}>
+            {supportingCast.slice(0, 48).map((castMember) => (
+              <button
+                key={castMember.tokenId}
+                className="chip"
+                style={{ opacity: 0.95 }}
+                onClick={() => {
+                  if (isTestAccess) {
+                    pickCastAsHero(castMember);
+                    updateCurrentTile((tile) => {
+                      tile.c = 0;
+                    });
+                    showToast(`Hero set to ${castMember.name}!`);
+                  } else {
+                    pickCastAsHero(castMember);
+                    showToast(`Using ${castMember.name}`);
+                  }
+                }}
+                title={isTestAccess ? `Set ${castMember.name} as hero` : `Use ${castMember.name}`}
+              >
+                <img src={castMember.imageUrl} alt={castMember.name} loading="lazy" />
+                <span>#{castMember.tokenId}</span>
+              </button>
+            ))}
           </div>
 
           <h3>Art version</h3>
@@ -417,9 +695,10 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
           </div>
           <p className="hint">Flat, quiet colors so the comic stays the focus.</p>
         </section>
+      </aside>
 
-        {/* Center Canvas */}
-        <main id="canvas">
+      {/* Center Canvas */}
+      <main id="canvas">
           <div id="pages-tray-container">
             {/* If Preview Mode: Render All Pages */}
             {isPreviewMode ? (
@@ -542,12 +821,21 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
 
                             {tile.bt && (
                               <div
-                                className={`b ${tile.bs === 'r' ? 'r' : ''}`}
+                                className={`b ${tile.bs === 'r' ? 'r' : ''} ${isTileSelected ? 'active-bubble' : ''}`}
                                 style={{ left: `${tile.bx}%`, top: `${tile.by}%` }}
+                                title="Click to edit words or drag to position"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedPanelIndex(pIdx);
                                   setSelectedChogTileIndex(tIdx);
+                                  setMobileTab('text');
+                                  setTimeout(() => {
+                                    if (tIdx === 0) {
+                                      bubbleRef0.current?.focus();
+                                    } else {
+                                      bubbleRef1.current?.focus();
+                                    }
+                                  }, 50);
                                 }}
                                 onPointerDown={(e) => {
                                   setSelectedPanelIndex(pIdx);
@@ -609,8 +897,10 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
           </div>
         </main>
 
-        {/* Tool: Selected Panel Art */}
-        <section id="art-tool" className={`tool ${mobileTab === 'art' ? 'on' : ''}`}>
+        {/* Right Column Tools */}
+        <aside className="sidebar-col sidebar-right">
+          {/* Tool: Selected Panel Art */}
+          <section id="art-tool" className={`tool ${mobileTab === 'art' ? 'on' : ''}`}>
           <h2>Selected panel</h2>
           <h3>Panel color</h3>
           <div className="sw" id="pbg">
@@ -816,17 +1106,24 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
             />{' '}
             Flip
           </label>
-          <p className="hint">Drag the art or a bubble in the panel to move it. With two Chogs, tap one to edit it.</p>
+          <p className="hint" style={{ marginBottom: '6px' }}>
+            Drag the art or a bubble in the panel to move it. With two Chogs, tap one to edit it.
+          </p>
         </section>
 
         {/* Tool: Words */}
         <section id="text-tool" className={`tool ${mobileTab === 'text' ? 'on' : ''}`}>
-          <h2>Words</h2>
-          <label htmlFor="cp">Caption box</label>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+            <h2 style={{ margin: 0, fontSize: '1.15rem' }}>Words</h2>
+          </div>
+
+          {/* Caption Box */}
+          <label htmlFor="cp" style={{ marginTop: '2px', fontWeight: 700 }}>Caption box</label>
           <textarea
             id="cp"
             rows={2}
             value={currentPanel.cap}
+            placeholder="Scene narration or location (optional)..."
             onChange={(e) => {
               const text = e.target.value;
               updateCurrentPanel((panel) => {
@@ -835,37 +1132,182 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
             }}
           />
 
-          <label htmlFor="bt" id="bl">Speech bubble</label>
-          <textarea
-            id="bt"
-            rows={2}
-            value={currentTile.bt}
-            onChange={(e) => {
-              const text = e.target.value;
-              updateCurrentTile((tile) => {
-                tile.bt = text;
-              });
-            }}
-          />
+          {currentPanel.k.length <= 1 ? (
+            /* Single Character Bubble */
+            <div className="bubble-editor-single" style={{ marginTop: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label htmlFor="bt" style={{ margin: 0, fontWeight: 700 }}>
+                  Speech bubble ({ownedChogs[currentPanel.k[0]?.c]?.name || 'Hero'})
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--mut)' }}>Tail:</span>
+                  <select
+                    id="bs"
+                    value={currentPanel.k[0]?.bs || 'l'}
+                    style={{ padding: '2px 6px', fontSize: '0.85rem' }}
+                    onChange={(e) => {
+                      const side = e.target.value as 'l' | 'r';
+                      updateCurrentTile((tile) => {
+                        tile.bs = side;
+                      });
+                    }}
+                  >
+                    <option value="l">Left ◄</option>
+                    <option value="r">Right ►</option>
+                  </select>
+                </div>
+              </div>
 
-          <label htmlFor="bs">Tail side</label>
-          <select
-            id="bs"
-            value={currentTile.bs}
-            onChange={(e) => {
-              const side = e.target.value as 'l' | 'r';
-              updateCurrentTile((tile) => {
-                tile.bs = side;
-              });
-            }}
-          >
-            <option value="l">Left</option>
-            <option value="r">Right</option>
-          </select>
-          <p className="hint">Leave text empty to hide it.</p>
+              <textarea
+                id="bt"
+                ref={bubbleRef0}
+                rows={2}
+                value={currentPanel.k[0]?.bt || ''}
+                placeholder="Type words... (Press Enter to add second dialogue)"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleAddSecondChog();
+                    setTimeout(() => {
+                      bubbleRef1.current?.focus();
+                    }, 60);
+                  }
+                }}
+                onChange={(e) => {
+                  const text = e.target.value;
+                  updateCurrentTile((tile) => {
+                    tile.bt = text;
+                  });
+                }}
+              />
+              <p className="hint">Press Enter to add a second Chog and start their reply.</p>
+            </div>
+          ) : (
+            /* Dual Character Bubbles */
+            <div className="dual-bubble-editor" style={{ marginTop: '12px' }}>
+              <div style={{ fontSize: '0.85rem', color: 'var(--mut)', marginBottom: '4px' }}>
+                Dual dialogue active in this panel:
+              </div>
+
+              {/* Bubble 1 */}
+              <div
+                className={`bubble-card ${selectedChogTileIndex === 0 ? 'active' : ''}`}
+                style={{
+                  border: selectedChogTileIndex === 0 ? '2px solid var(--org)' : '2px solid var(--line)',
+                  borderRadius: '10px',
+                  padding: '8px',
+                  background: selectedChogTileIndex === 0 ? 'rgba(242, 154, 31, 0.08)' : 'var(--card)',
+                }}
+                onClick={() => setSelectedChogTileIndex(0)}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: selectedChogTileIndex === 0 ? 'var(--org)' : 'var(--ink)' }}>
+                    1. {ownedChogs[currentPanel.k[0]?.c]?.name || 'Chog #1'} (Left)
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--mut)' }}>Tail:</span>
+                    <select
+                      value={currentPanel.k[0]?.bs || 'l'}
+                      style={{ padding: '2px 4px', fontSize: '0.8rem' }}
+                      onChange={(e) => {
+                        const side = e.target.value as 'l' | 'r';
+                        updateCurrentPanel((panel) => {
+                          if (panel.k[0]) panel.k[0].bs = side;
+                        });
+                      }}
+                    >
+                      <option value="l">Left ◄</option>
+                      <option value="r">Right ►</option>
+                    </select>
+                  </div>
+                </div>
+
+                <textarea
+                  ref={bubbleRef0}
+                  rows={2}
+                  value={currentPanel.k[0]?.bt || ''}
+                  placeholder="First Chog's words... (Press Enter to jump to reply)"
+                  onFocus={() => setSelectedChogTileIndex(0)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      setSelectedChogTileIndex(1);
+                      bubbleRef1.current?.focus();
+                    }
+                  }}
+                  onChange={(e) => {
+                    const text = e.target.value;
+                    updateCurrentPanel((panel) => {
+                      if (panel.k[0]) panel.k[0].bt = text;
+                    });
+                  }}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              {/* Bubble 2 */}
+              <div
+                className={`bubble-card ${selectedChogTileIndex === 1 ? 'active' : ''}`}
+                style={{
+                  border: selectedChogTileIndex === 1 ? '2px solid var(--org)' : '2px solid var(--line)',
+                  borderRadius: '10px',
+                  padding: '8px',
+                  background: selectedChogTileIndex === 1 ? 'rgba(242, 154, 31, 0.08)' : 'var(--card)',
+                }}
+                onClick={() => setSelectedChogTileIndex(1)}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: selectedChogTileIndex === 1 ? 'var(--org)' : 'var(--ink)' }}>
+                    2. {ownedChogs[currentPanel.k[1]?.c]?.name || 'Chog #2'} (Right)
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--mut)' }}>Tail:</span>
+                    <select
+                      value={currentPanel.k[1]?.bs || 'r'}
+                      style={{ padding: '2px 4px', fontSize: '0.8rem' }}
+                      onChange={(e) => {
+                        const side = e.target.value as 'l' | 'r';
+                        updateCurrentPanel((panel) => {
+                          if (panel.k[1]) panel.k[1].bs = side;
+                        });
+                      }}
+                    >
+                      <option value="l">Left ◄</option>
+                      <option value="r">Right ►</option>
+                    </select>
+                  </div>
+                </div>
+
+                <textarea
+                  ref={bubbleRef1}
+                  rows={2}
+                  value={currentPanel.k[1]?.bt || ''}
+                  placeholder="Second Chog's reply..."
+                  onFocus={() => setSelectedChogTileIndex(1)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      bubbleRef1.current?.blur();
+                      showToast('Dialogue updated!');
+                    }
+                  }}
+                  onChange={(e) => {
+                    const text = e.target.value;
+                    updateCurrentPanel((panel) => {
+                      if (panel.k[1]) panel.k[1].bt = text;
+                    });
+                  }}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <p className="hint">Tap any bubble on the canvas to select and drag it. Leave empty to hide.</p>
+            </div>
+          )}
         </section>
+      </aside>
 
-        {/* Mobile Tabs */}
+      {/* Mobile Tabs */}
         <nav className="tabs" role="tablist">
           {(['chogs', 'page', 'art', 'text'] as const).map((tab) => (
             <button
@@ -880,6 +1322,76 @@ export const StudioView: React.FC<StudioViewProps> = ({ onBackToLanding }) => {
           ))}
         </nav>
       </div>
+
+      {/* Local Test Access Cast Picker Modal */}
+      {showCastPicker && (
+        <div className="cast-modal-backdrop" onClick={() => setShowCastPicker(false)}>
+          <div className="cast-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="cast-modal-header">
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.35rem' }}>Pick Any Cast Chog as Hero</h3>
+                  <span className="test-badge">Test access</span>
+                </div>
+                <p style={{ margin: '4px 0 0', fontSize: '0.9rem', color: 'var(--mut)' }}>
+                  Local development test access — all {supportingCast.length} Chogs available.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCastPicker(false)}
+                style={{ padding: '6px 14px', fontSize: '0.95rem' }}
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <div style={{ padding: '12px 16px', borderBottom: '2px solid var(--line)', background: 'var(--card)' }}>
+              <input
+                type="text"
+                placeholder="Search by ID (e.g. 1462) or trait..."
+                value={castSearch}
+                onChange={(e) => setCastSearch(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: '2px solid var(--line)',
+                  background: 'var(--bg)',
+                  color: 'var(--ink)',
+                  fontSize: '1rem',
+                }}
+                autoFocus
+              />
+            </div>
+
+            <div className="cast-modal-grid">
+              {filteredCast.map((c) => {
+                const isCurrent = activeChog?.tokenId === c.tokenId;
+                return (
+                  <button
+                    key={c.tokenId}
+                    type="button"
+                    className={`cast-modal-chip ${isCurrent ? 'active' : ''}`}
+                    onClick={() => {
+                      pickCastAsHero(c);
+                      updateCurrentTile((tile) => {
+                        tile.c = 0;
+                      });
+                      setShowCastPicker(false);
+                      showToast(`Hero set to ${c.name}!`);
+                    }}
+                    title={`Pick ${c.name} as Hero`}
+                  >
+                    <img src={c.imageUrl} alt={c.name} loading="lazy" />
+                    <span>#{c.tokenId}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Status Toast */}
       <div id="msg" role="status" className={toastMessage ? 'on' : ''}>

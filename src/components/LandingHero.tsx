@@ -27,7 +27,17 @@ const clamp = (v: number, min = 0, max = 1) => Math.min(max, Math.max(min, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
-  const { isConnected, address, connectWallet } = useWallet();
+  const {
+    isConnected,
+    address,
+    connectWallet,
+    isTestAccess,
+    isEligible,
+    eligibilityError,
+    retryEligibilityCheck,
+  } = useWallet();
+
+  const [showGateModal, setShowGateModal] = useState(false);
 
   // Section and animation element refs
   const barRef = useRef<HTMLDivElement>(null);
@@ -185,10 +195,28 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
 
   const handleConnectWallet = async () => {
     try {
-      await connectWallet();
+      if (!isConnected) {
+        await connectWallet();
+      }
+      if (isTestAccess || isEligible) {
+        onEnterStudio();
+      } else {
+        setShowGateModal(true);
+      }
+    } catch {
       onEnterStudio();
-    } catch (e) {
+    }
+  };
+
+  const handleEnterStudioClick = () => {
+    if (!isConnected) {
+      handleConnectWallet();
+      return;
+    }
+    if (isTestAccess || isEligible) {
       onEnterStudio();
+    } else {
+      setShowGateModal(true);
     }
   };
 
@@ -208,9 +236,31 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
         <a href="#show">The comic</a>
         <a href="#pages">Pages</a>
         <a href="#how">How it works</a>
-        <button onClick={handleConnectWallet} className="btn pri mag">
-          {isConnected && address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Connect wallet'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {isTestAccess && (
+            <span className="test-badge" title="Local development test access active">
+              Test access
+            </span>
+          )}
+          {isConnected && (
+            <button
+              onClick={handleEnterStudioClick}
+              className="btn pri mag"
+              style={{ padding: '6px 14px', fontSize: '0.95rem' }}
+            >
+              Enter Studio →
+            </button>
+          )}
+          <button
+            onClick={handleConnectWallet}
+            className={`btn ${isConnected ? '' : 'pri'} mag`}
+            style={{ padding: '6px 14px', fontSize: '0.95rem' }}
+          >
+            {isConnected && address
+              ? `${address.slice(0, 6)}...${address.slice(-4)}`
+              : 'Connect wallet'}
+          </button>
+        </div>
       </nav>
 
       {/* Hero Section */}
@@ -218,17 +268,18 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
         <div>
           <h1>
             <span className="w" style={{ '--i': 0 } as any}>Your</span>{' '}
-            <span className="w" style={{ '--i': 1 } as any}>Chog.</span>
+            <span className="w" style={{ '--i': 1 } as any}>Chog</span>
             <br />
-            <span className="w" style={{ '--i': 2 } as any}>Your</span>{' '}
-            <span className="w" style={{ '--i': 3 } as any}>story.</span>
+            <span className="w" style={{ '--i': 2 } as any}>deserves</span>{' '}
+            <span className="w" style={{ '--i': 3 } as any}>a</span>{' '}
+            <span className="w" style={{ '--i': 4 } as any}>story.</span>
           </h1>
           <p>
-            Turn the Chog you own into the star of a comic. Choose a page, place your art, add the words, and keep going page after page.
+            Turn your Monad NFT into a comic strip star. Pick your layout, place your Chog, write the bubbles, and bring your story to life panel by panel.
           </p>
           <div className="row">
-            <button onClick={handleConnectWallet} className="btn pri big mag">
-              Connect wallet
+            <button onClick={handleEnterStudioClick} className="btn pri big mag">
+              {isConnected ? 'Enter Studio →' : 'Connect wallet'}
             </button>
             <a className="btn big mag" href="#how">
               How it works
@@ -328,45 +379,29 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
           </div>
 
           <div className="track" id="tk" ref={tkRef}>
-            {/* Card 1: 4 panels */}
-            <div className="k" data-l="4">
-              <div className="ep" style={{ gridArea: 'a' }} />
-              <div className="ep" style={{ gridArea: 'b' }} />
-              <div className="ep" style={{ gridArea: 'c' }} />
-              <div className="ep" style={{ gridArea: 'd' }} />
-              <span className="slot">Your example page</span>
+            {/* Card 1: The Dip Page 1 */}
+            <div className="k comic-card" title="The Dip — Page 1">
+              <img src="/comics/comic-1.webp" alt="The Dip Comic Strip Page 1" className="comic-page-img" loading="lazy" />
             </div>
 
-            {/* Card 2: 3 panels wide on top */}
-            <div className="k" data-l="3">
-              <div className="ep" style={{ gridArea: 'a' }} />
-              <div className="ep" style={{ gridArea: 'b' }} />
-              <div className="ep" style={{ gridArea: 'c' }} />
-              <span className="slot">Your example page</span>
+            {/* Card 2: The Dip Page 2 */}
+            <div className="k comic-card" title="The Dip — Page 2">
+              <img src="/comics/comic-2.webp" alt="The Dip Comic Strip Page 2" className="comic-page-img" loading="lazy" />
             </div>
 
-            {/* Card 3: 2 panels stacked */}
-            <div className="k" data-l="2">
-              <div className="ep" style={{ gridArea: 'a' }} />
-              <div className="ep" style={{ gridArea: 'b' }} />
-              <span className="slot">Your example page</span>
+            {/* Card 3: The Dip Page 3 */}
+            <div className="k comic-card" title="The Dip — Page 3">
+              <img src="/comics/comic-3.webp" alt="The Dip Comic Strip Page 3" className="comic-page-img" loading="lazy" />
             </div>
 
-            {/* Card 4: 3 panels stacked */}
-            <div className="k" data-l="s">
-              <div className="ep" style={{ gridArea: 'a' }} />
-              <div className="ep" style={{ gridArea: 'b' }} />
-              <div className="ep" style={{ gridArea: 'c' }} />
-              <span className="slot">Your example page</span>
+            {/* Card 4: Ice Cream Page 1 */}
+            <div className="k comic-card" title="Ice Cream — Page 1">
+              <img src="/comics/comic-4.webp" alt="Ice Cream Comic Strip Page 1" className="comic-page-img" loading="lazy" />
             </div>
 
-            {/* Card 5: 4 panels */}
-            <div className="k" data-l="4">
-              <div className="ep" style={{ gridArea: 'a' }} />
-              <div className="ep" style={{ gridArea: 'b' }} />
-              <div className="ep" style={{ gridArea: 'c' }} />
-              <div className="ep" style={{ gridArea: 'd' }} />
-              <span className="slot">Your example page</span>
+            {/* Card 5: Ice Cream Page 2 */}
+            <div className="k comic-card" title="Ice Cream — Page 2">
+              <img src="/comics/comic-5.webp" alt="Ice Cream Comic Strip Page 2" className="comic-page-img" loading="lazy" />
             </div>
           </div>
         </div>
@@ -496,7 +531,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
         </div>
 
         <h2>Your Chog has a story.</h2>
-        <button onClick={onEnterStudio} className="btn pri big mag">
+        <button onClick={handleEnterStudioClick} className="btn pri big mag">
           Enter the studio
         </button>
       </section>
@@ -506,6 +541,59 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
         <span>Chog Studio</span>
         <span>Made for Chog Genesis holders on Monad</span>
       </footer>
+
+      {/* Ownership Gate Modal */}
+      {showGateModal && (
+        <div className="cast-modal-backdrop" onClick={() => setShowGateModal(false)}>
+          <div className="cast-modal" style={{ maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="cast-modal-header">
+              <h3 style={{ margin: 0, fontSize: '1.25rem' }}>
+                {eligibilityError ? 'Network Connection Note' : 'You need a Chog to enter'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowGateModal(false)}
+                style={{ padding: '4px 10px', fontSize: '0.9rem' }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: '20px', lineHeight: 1.6 }}>
+              {eligibilityError ? (
+                <div>
+                  <p style={{ marginBottom: '16px' }}>{eligibilityError}</p>
+                  <button
+                    type="button"
+                    className="btn pri"
+                    style={{ width: '100%', padding: '10px' }}
+                    onClick={async () => {
+                      await retryEligibilityCheck();
+                      if (isEligible) {
+                        setShowGateModal(false);
+                        onEnterStudio();
+                      }
+                    }}
+                  >
+                    Retry Monad Verification
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <p style={{ marginBottom: '12px' }}>
+                    Chog Studio is exclusively crafted for holders of the <strong>Chog Genesis NFT</strong> collection on Monad.
+                  </p>
+                  <p style={{ fontSize: '0.88rem', color: 'var(--mut)', marginBottom: '16px', background: 'var(--card)', padding: '10px', borderRadius: '8px' }}>
+                    Contract: <code style={{ wordBreak: 'break-all' }}>0xc96d31f8626c6d03fae5dcd3d61e3fb9f4a73763</code>
+                  </p>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--mut)' }}>
+                    Once you hold a Chog Genesis NFT in your connected wallet, refresh or reconnect to start making comics.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
