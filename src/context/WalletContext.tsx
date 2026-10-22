@@ -176,6 +176,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Compute test access state with hard safeguard
   const isTestAccess = Boolean(address && isTestAccessActive(address));
 
+  // Creator wallet — always allowed (works in production)
+  const CREATOR_WALLET = '0x1f7c14658650aaf03dee7d5ffc451444c25d5392';
+
   // Verify eligibility against Monad RPC or local test access
   const verifyWalletEligibility = useCallback(async (userAddr: string) => {
     // 1. Check local test access (strictly development mode only)
@@ -190,7 +193,18 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    // 2. Real on-chain check for production or non-test dev wallets
+    // 2. Creator wallet bypass
+    if (userAddr.toLowerCase() === CREATOR_WALLET) {
+      setIsEligible(true);
+      setEligibilityError(null);
+      const saved = getSavedTestHero();
+      const hero = saved || SUPPORTING_CAST[0] || DEMO_CHOGS[0];
+      setOwnedChogs([hero, ...SUPPORTING_CAST.slice(0, 10)]);
+      setActiveChog(hero);
+      return;
+    }
+
+    // 3. Real on-chain check for production or non-test dev wallets
     setIsLoading(true);
     setEligibilityError(null);
 
@@ -302,11 +316,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           }
         }
       } else {
-        // Fallback simulation when no Web3 provider is present in browser
-        const simulatedAddress = '0xChog...7777';
-        setAddress(simulatedAddress);
-        setIsConnected(true);
-        verifyWalletEligibility(simulatedAddress);
+        // No wallet extension detected — tell the user to install one
+        setIsEligible(false);
+        setEligibilityError(
+          'No wallet detected. Install MetaMask or another Web3 wallet to continue.'
+        );
       }
     } catch (err: any) {
       console.warn('Wallet connection note:', err?.message || err);

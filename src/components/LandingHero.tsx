@@ -267,7 +267,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
       <header className="hero" id="top">
         <div>
           <h1>
-            <span className="w" style={{ '--i': 0 } as any}>Your</span>{' '}
+            <span className="w" style={{ '--i': 0 } as any}>Every</span>{' '}
             <span className="w" style={{ '--i': 1 } as any}>Chog</span>
             <br />
             <span className="w" style={{ '--i': 2 } as any}>deserves</span>{' '}
@@ -562,20 +562,32 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onEnterStudio }) => {
               {eligibilityError ? (
                 <div>
                   <p style={{ marginBottom: '16px' }}>{eligibilityError}</p>
-                  <button
-                    type="button"
-                    className="btn pri"
-                    style={{ width: '100%', padding: '10px' }}
-                    onClick={async () => {
-                      await retryEligibilityCheck();
-                      if (isEligible) {
-                        setShowGateModal(false);
-                        onEnterStudio();
-                      }
-                    }}
-                  >
-                    Retry Monad Verification
-                  </button>
+                  {eligibilityError.includes('No wallet') ? (
+                    <a
+                      href="https://metamask.io/download/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn pri"
+                      style={{ width: '100%', padding: '10px', display: 'block', textAlign: 'center' }}
+                    >
+                      Get MetaMask →
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn pri"
+                      style={{ width: '100%', padding: '10px' }}
+                      onClick={async () => {
+                        await retryEligibilityCheck();
+                        if (isEligible) {
+                          setShowGateModal(false);
+                          onEnterStudio();
+                        }
+                      }}
+                    >
+                      Retry Monad Verification
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div>
